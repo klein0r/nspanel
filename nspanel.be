@@ -1,36 +1,11 @@
 # Sonoff NSPanel Tasmota driver v0.47 | code by blakadder and s-hadinger
+# Modified by klein0r - removed weather api, temperature sensor and default widgets
 var mode = "NSPanel"
 import persist
 var devicename = tasmota.cmd("DeviceName")["DeviceName"]
 persist.tempunit = tasmota.get_option(8) == 1 ? "F" : "C"
 if persist.has("dim")  else   persist.dim = "1"  end
-var loc = persist.has("loc") ? persist.loc : "North Pole"       
 persist.save() # save persist file until serial bug fixed
-
-  var widget = {
-# 1 = toggle switch horizontal
-# 2 = toggle switch double horizontal
-# 3 = toggle switch triple horizontal
-# 4 = toggle switch quad horizontal
-# 6 = toggle switch vertical
-# 7 = toggle switch double vertical
-# 8 = toggle switch triple vertical
-# 9 = toggle switch quad vertical
-# 33 = RGB light strip
-# 52 = CCT bulb
-# 69 = RGB+CCT bulb
-# leave empty brackets if you don't want a widget there
-# ctype scene doesn't have an uiid
-# index "name   ", "ctype", uiid | name max 8 characters, rest will be truncated)
-  1: ["Index 1", "group", 1],
-  2: ["Index 2", "group", 2],
-  3: ["Index 3", "group", 3],
-  4: ["Index 4", "group", 4],
-  5: ["Index 5", "group", 33],
-  6: ["Index 6", "device", 52],
-  7: ["Index 7", "device", 69],
-  8: ["Index 8", "scene"],
-}
 
 class NSPanel : Driver
   # set thermostat options
@@ -58,7 +33,7 @@ class NSPanel : Driver
   static header = bytes('55AA') 
 
   var ser  # create serial port object
-       
+
   # intialize the serial port, if unspecified Tx/Rx are GPIO 16/17
   def init(tx, rx)
     if !tx   tx = 16 end
@@ -172,107 +147,6 @@ class NSPanel : Driver
     self.send(json_payload)
   end  
 
-  # draw widgets
-  def draw()
-    var i = 1
-    while i < 9
-      if size(widget[i]) > 1
-        var wdgt = ""
-        if widget[i][1] == "scene"
-          wdgt = '{"HMI_resources":[{"index":' + str(i) + ',"ctype":"' + widget[i][1] + '","id":"' + str(i) + '"}]}'
-        else
-          wdgt = '{"HMI_resources":[{"index":' + str(i) + ',"ctype":"' + widget[i][1] + '","id":"' + str(i) + '","uiid":' + str(widget[i][2]) + '}]}'
-        end
-        var name = '{"relation":[{"ctype":"' + widget[i][1] + '","id":"' + str(i) + '","name":"' + widget[i][0][0..7] + '"}]}'
-        self.send(wdgt)
-        self.send(name)
-      else
-      self.send('{"index":' + str(i) + ',"type":"delete"}')
-      end
-      i += 1
-    end
-  end
-
-# update weather forecast, since the provider doesn't support range I winged it with FeelsLike temperature
-  def set_weather()
-    import json
-      var weather_icon = {
-        "": 30,      # Unknown             
-        "113": 1,    # Sunny      
-        "116": 2,    # PartlyCloudy   
-        "119": 2,    # Cloudy             
-        "122": 7,    # VeryCloudy           
-        "143": 11,   # Fog                 
-        "176": 40,   # LightShowers     
-        "179": 24,   # LightSleetShowers 
-        "182": 24,   # LightSleet        
-        "185": 24,   # LightSleet        
-        "200": 42,   # ThunderyShowers  
-        "227": 20,   # LightSnow  
-        "230": 22,   # HeavySnow        
-        "248": 11,   # Fog                 
-        "260": 11,   # Fog                 
-        "263": 40,   # LightShowers     
-        "266": 40,   # LightRain      
-        "281": 24,   # LightSleet        
-        "284": 24,   # LightSleet        
-        "293": 40,   # LightRain      
-        "296": 40,   # LightRain      
-        "299": 18,   # HeavyShowers      
-        "302": 18,   # HeavyRain        
-        "305": 18,   # HeavyShowers      
-        "308": 18,   # HeavyRain        
-        "311": 24,   # LightSleet        
-        "314": 24,   # LightSleet        
-        "317": 24,   # LightSleet        
-        "320": 20,   # LightSnow  
-        "323": 22,   # LightSnowShowers 
-        "326": 22,   # LightSnowShowers 
-        "329": 22,   # HeavySnow        
-        "332": 22,   # HeavySnow        
-        "335": 29,   # HeavySnowShowers   
-        "338": 22,   # HeavySnow        
-        "350": 24,   # LightSleet        
-        "353": 24,   # LightSleet        
-        "356": 18,   # HeavyShowers      
-        "359": 18,   # HeavyRain        
-        "362": 24,   # LightSleetShowers 
-        "365": 24,   # LightSleetShowers 
-        "368": 22,   # LightSnowShowers 
-        "371": 29,   # HeavySnowShowers   
-        "374": 24,   # LightSleetShowers 
-        "377": 24,   # LightSleet        
-        "386": 42,   # ThunderyShowers  
-        "389": 42,   # ThunderyHeavyRain  
-        "392": 42,   # ThunderySnowShowers
-        "395": 29,   # HeavySnowShowers   
-      }   
-    var temp
-    var tmin
-    var tmax
-    var cl = webclient()
-    var url = "http://wttr.in/" + loc + '?format=j2'
-    cl.set_useragent("curl/7.72.0")      
-    cl.begin(url)
-      if cl.GET() == "200" || cl.GET() == 200
-        var b = json.load(cl.get_string())
-        if persist.tempunit == "F"
-          temp = b['current_condition'][0]['temp_F']
-          tmin = b['weather'][0]['mintempF']
-          tmax = b['weather'][0]['maxtempF']
-        else
-          temp = b['current_condition'][0]['temp_C']
-          tmin = b['weather'][0]['mintempC']
-          tmax = b['weather'][0]['maxtempC']
-        end
-      var wttr = '{"HMI_weather":' + str(weather_icon[b['current_condition'][0]['weatherCode']]) + ',"HMI_outdoorTemp":{"current":' + temp + ',"range":" ' + tmin + ', ' + tmax + '"}}'
-      self.send(wttr)
-      log('NSP: Weather update for location: ' + b['nearest_area'][0]['areaName'][0]['value'] + ", "+ b['nearest_area'][0]['country'][0]['value'])
-      else
-      log('NSP: Weather update failed!', 3)      
-    end
-  end
-
   # commands to populate an empty screen, should be executed when screen initializes
   def screeninit()
     # self.send('{"queryInfo":"version"}')
@@ -281,8 +155,6 @@ class NSPanel : Driver
     self.send('{"HMI_dimOpen":' + persist.dim + '}')
     self.set_clock()
     self.set_power()
-    self.set_weather()
-    self.draw()
     tasmota.cmd("State")
     tasmota.cmd("TelePeriod")
   end
@@ -383,33 +255,6 @@ end
 
 tasmota.add_cmd('NSPDim', dimopen)
 
-# add NSPLocation command to Tasmota
-def setloc(NSPLocation, idx, payload)
-  if size(payload) > 1
-    persist.loc = payload
-    tasmota.resp_cmnd_done()
-    persist.save()
-    loc = persist.loc
-    nsp.set_weather()
-  else
-    payload = loc
-  end
-  import string
-  var jm = string.format("{\"NSPanel\":{\"Location\":\"%s\"}}",payload)
-  tasmota.publish_result(jm, "RESULT")
-end
-
-tasmota.add_cmd('NSPLocation', setloc)
-
-# set displayed indoor temperature to value:int
-def set_temp(value)
-  var temp_payload = '{"temperature":' + str(value) + ',"tempUnit":"' + persist.tempunit + '"}'
-  log('NSP: Indoor temperature set with ' + temp_payload, 3)
-  nsp.send(temp_payload)
-end
-
-tasmota.add_rule("Tele#ANALOG#Temperature1", set_temp) # rule to run set_temp on teleperiod
-
 # set wifi icon status
 
 def set_wifi(value)
@@ -423,12 +268,6 @@ def set_disconnect()
   nsp.send('{"wifiState":"nonetwork","rssiLevel":0}')
 end
 
-def sync_weather() # set weather every 60 minutes
-  nsp.set_weather()
-  print("Weather forecast synced")
-  tasmota.set_timer(60*60*1000, sync_weather)
-end
-
 tasmota.cmd("Rule3 1") # needed until Berry bug fixed
 tasmota.cmd("State")
 tasmota.add_rule("Time#Minute", /-> nsp.set_clock()) # set rule to update clock every minute
@@ -436,6 +275,5 @@ tasmota.add_rule("Tele#Wifi#RSSI", set_wifi) # set rule to update wifi icon
 tasmota.add_rule("wifi#disconnected", set_disconnect) # set rule to change wifi icon on disconnect
 tasmota.add_rule("mqtt#disconnected", set_disconnect) # set rule to change wifi icon on disconnect
 tasmota.add_rule("system#boot", /-> nsp.screeninit()) 
-tasmota.add_rule("time#initialized", sync_weather)
 
 tasmota.cmd("TelePeriod")
